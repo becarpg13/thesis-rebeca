@@ -313,7 +313,7 @@ int main(int argc, char* argv[]) {
     }
 
     // -------------------------------------------------------------------
-    // Criação da vizualização em tempo real e do exportador para Blender
+    // Criação da visualização em tempo real e do exportador para Blender
     // -------------------------------------------------------------------
 
     std::shared_ptr<ChVisualSystem> vis;
