@@ -79,6 +79,7 @@ double crm_initial_spacing = 0.01; // espaçamento inicial das partículas do so
 
 
 int main(int argc, char* argv[]) {
+    // PARÂMETROS DE ENTRADA DO USUÁRIO
     // Para usar o modo de convergência, o programa deve receber 5 argumentos: ./programa <slip> <vel> <valor_convergencia> <modo_convergencia>
     // Modo de convergência: "time" para convergência de passo de tempo, "space" para convergência de espaçamento inicial do CRM.
     if (argc == 5) {
@@ -122,80 +123,87 @@ int main(int argc, char* argv[]) {
     cout << "Comecando simulacao com razao de escorregamento: " << slip_percent << "%" << << endl;
     cout << "E velocidade linear da roda: " << wheel_vel << " m/s" << endl;
 
-    // --------------------------------
-    // Create wheel and tire subsystems
-    // --------------------------------
+    // -------------------------------------
+    // Criação dos subsistemas da roda e do pneu
+    // -------------------------------------
 
     auto wheel = chrono_types::make_shared<DummyViperWheel>();
     auto tire = chrono_types::make_shared<ViperTire>();
 
 
-    // -------------------------------------------------
-    // Create system and set solver and integrator types
-    // -------------------------------------------------
+    // --------------------------
+    // Criação do sistema físico 
+    // --------------------------
 
-    //ChSystemNSC sys;
     ChSystemSMC sys;
     sys.SetCollisionSystemType(ChCollisionSystem::Type::BULLET);
+
+    // --------------------------------------------
+    // Configuração do solucionador e do integrador
+    // --------------------------------------------
 
     ChSolver::Type solver_type = ChSolver::Type::SPARSE_QR;
     ChTimestepper::Type integrator_type = ChTimestepper::Type::EULER_IMPLICIT_LINEARIZED;
     SetChronoSolver(sys, solver_type, integrator_type);
 
-    // -----------------------------
-    // Create and configure test rig
-    // -----------------------------
+    // ------------------------------------------
+    // Criação e configuração da bancada de teste
+    // ------------------------------------------
 
     ChTireTestRig rig(wheel, tire, &sys);
 
-    rig.SetGravitationalAcceleration(1.625);  // Moon gravity
-    //rig.SetGravitationalAcceleration(9.81);  // Earth gravity
-    rig.SetNormalLoad(17.5*9.81);
+    rig.SetGravitationalAcceleration(1.625);  // Gravidade lunar
+    //rig.SetGravitationalAcceleration(9.81);  // Gravidade terrestre
+    rig.SetNormalLoad(17.5*9.81); // ATENÇÃO: recebe a CARGA NORMAL desejada (N)
 
     rig.SetTireStepsize(step_size);
     rig.SetTireVisualizationType(VisualizationType::COLLISION);
 
-    // Set CRM terrain
+    // Definição do terreno SPH
     ChTireTestRig::TerrainPatchSize size;
     size.length = 2.2;
     size.width = 1;
     size.depth = 0.20;
 
     ChTireTestRig::TerrainParamsCRM params;
-    params.sph_params.initial_spacing = crm_initial_spacing;  // particle spacing (m)
+    params.sph_params.initial_spacing = crm_initial_spacing;
     params.mat_props.density = 1627.0;
     params.mat_props.Young_modulus = 1e6;
     params.mat_props.cohesion_coeff = 0.0;
     params.mat_props.mu_I0 = 0.03;
     params.mat_props.mu_fric_2 = 0.77;
     params.mat_props.mu_fric_s = 0.77;
-    params.mat_props.average_diam = 0.004;  // average diameter of soil particles (m)
+    params.mat_props.average_diam = 0.004;  // diâmetro médio das partículas do solo (m)
 
     rig.SetTerrainCRM(size, params);
 
-    // Register custom callback for wheel BCE marker generation
+    // Criação do callback para geração dos marcadores BCE
     auto bce_callback = chrono_types::make_shared<ViperTireBCE>(tire, params.sph_params.initial_spacing * spacing_ratio, inner_radius);
     rig.RegisterWheelBCECreationCallback(bce_callback);
 
-    // -----------------
-    // Set test scenario
-    // -----------------
+    // -----------------------------
+    // Definição do cenário de teste
+    // -----------------------------
 
     rig.SetConstantLongitudinalSlip(wheel_slip, wheel_vel);
 
-    // Set delay before applying inputs (settling time)
+    // Tempo de delay para o início do funcionamento da roda (s).
     double input_time_delay = 0.1;
     rig.SetTimeDelay(input_time_delay);
 
-    rig.SetWheelInitialClearance(0.02);  // 2 cm clearance
+    rig.SetWheelInitialClearance(0.02);  // Ajuste para alterar a distância inicial entre a roda e o solo (m).
 
-    // Initialize the tire test rig
+    // Inicialização da bancada de teste
     rig.Initialize(ChTireTestRig::Mode::TEST);
 
     cout << "Rig normal load: " << rig.GetNormalLoad() << endl;
     cout << "Rig total mass:  " << rig.GetMass() << endl;
 
 
+
+    // --------------------------------
+    // Criação dos diretórios de saída
+    // --------------------------------
 
     const std::string out_dir_root = GetChronoOutputPath() + "ViperWheel_SPH_TCC2/";
     std::string out_dir = GetChronoOutputPath() + "ViperWheel_SPH_TCC2/Slip_" + std::to_string(slip_percent) + "/";
@@ -205,17 +213,13 @@ int main(int argc, char* argv[]) {
         out_dir_slip = GetChronoOutputPath() + "ViperWheel_SPH_TCC2/Slip_" + std::to_string(slip_percent) + "_Convergence_Time/";
         out_dir = out_dir_slip + "Step_" + std::to_string(static_cast<int>(step_size * 1e6)) + "us";
     }
-    // Nova lógica para criar pasta organizada de convergência espacial
     else if (space_convergence == true) {
         out_dir_slip = GetChronoOutputPath() + "ViperWheel_SPH_TCC2/Slip_" + std::to_string(slip_percent) + "_Convergence_Space/";
         out_dir = out_dir_slip + "Spacing_" + std::to_string(static_cast<int>(crm_initial_spacing * 1e3)) + "mm";
     }
 
-
-
     std::cout << "Output directory: " << out_dir << std::endl;
 
-    // Create output directories
     if (!filesystem::create_directory(filesystem::path(out_dir_root))) {
         cerr << "Error creating directory " << out_dir_root << endl;
         return 1;
@@ -243,7 +247,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Write the information into a txt file
+    // Criação do arquivo de resultados
     std::ofstream myFile;
     if (output) {
         myFile.open(out_dir + "/results.txt", std::ios::trunc);
@@ -309,7 +313,7 @@ int main(int argc, char* argv[]) {
     }
 
     // ---------------------------------
-    // Create the run-time visualization
+    // Criação da vizualização em tempo real e do exportador para Blender
     // ---------------------------------
 
     std::shared_ptr<ChVisualSystem> vis;
@@ -343,9 +347,9 @@ int main(int argc, char* argv[]) {
     }
 
     #ifdef CHRONO_POSTPROCESS
-    // ---------------------------
-    // Create the Blender exporter
-    // ---------------------------
+    // --------------------------------------
+    // Criar exportador de dados para Blender
+    // --------------------------------------
 
     postprocess::ChBlender blender_exporter(&sys);
 
@@ -367,22 +371,19 @@ int main(int argc, char* argv[]) {
 
     ChFsiFluidSystemSPH& sysSPH = sysFSI->GetFluidSystemSPH();
 
-    // ---------------
-    // Simulation loop
-    // ---------------
+    // -----------------
+    // LOOP DE SIMULAÇÃO
+    // -----------------
 
-    // Timers and counters
-    ChTimer timer;         // timer for measuring total run time
-    double time = 0;       // simulated time
-    double sim_time = 0;   // simulation time
-    int render_frame = 0;  // render frame counter
-    int out_frame = 0;     // output frame counter
+    // Timers e contadores
+    ChTimer timer;         // timer para medir o tempo total de execução
+    double time = 0;       // tempo simulado
+    double sim_time = 0;   // tempo de simulação
+    int render_frame = 0;  // contador de frames para renderização
+    int out_frame = 0;     // contador de frames para saída de dados
 
-
-    // Data collection
+    // Funções de interpolação para coleta de dados
     ChFunctionInterp long_slip_fct;
-    ChFunctionInterp slip_angle_fct;
-    ChFunctionInterp camber_angle_fct;
     ChFunctionInterp dbp_fct;
     ChFunctionInterp torque_fct;
     ChFunctionInterp sinkage_fct;
@@ -404,9 +405,6 @@ int main(int argc, char* argv[]) {
         time = sys.GetChTime();
 
         if (render && time >= render_frame / render_fps) {
-            //auto& loc = rig.GetPos();
-            //vis->UpdateCamera(loc + ChVector3d(1.0, 2.5, 0.5), loc + ChVector3d(0, 0.25, -0.25));
-
             if (!vis->Run())
                 break;
             vis->Render();
@@ -419,8 +417,6 @@ int main(int argc, char* argv[]) {
         sim_time += sys.GetTimerStep();
 
         auto long_slip = rig.GetLongitudinalSlip();
-        auto slip_angle = rig.GetSlipAngle() * CH_RAD_TO_DEG;
-        auto camber_angle = rig.GetCamberAngle() * CH_RAD_TO_DEG;
         auto dbp = rig.GetDBP();
         min_dbp = std::min(min_dbp, dbp);
         max_dbp = std::max(max_dbp, dbp);
@@ -441,7 +437,6 @@ int main(int argc, char* argv[]) {
         cout << "  wheel torque:           " << torque << endl;
         cout << " sinkage:                 " << sinkage << endl;
         cout << " " << endl;
-        //cout << "  tire force:             " << frc << endl;
         }
 
         if (output) {
@@ -450,14 +445,11 @@ int main(int argc, char* argv[]) {
 
         if (gnuplot_output && time > input_time_delay) {
             long_slip_fct.AddPoint(time, long_slip);
-            slip_angle_fct.AddPoint(time, slip_angle);
-            camber_angle_fct.AddPoint(time, camber_angle);
             dbp_fct.AddPoint(time, dbp);
             torque_fct.AddPoint(time, torque);
             sinkage_fct.AddPoint(time, sinkage);
         }
 
-        //testando pro paraview
         if (output_paraview && time >= out_frame / output_fps) {
             cout << "\n-------- SALVANDO VTK --------\n";
             sysSPH.SaveParticleData(out_dir + "/particles");
@@ -470,14 +462,11 @@ int main(int argc, char* argv[]) {
             if (blender_output)
                 blender_exporter.ExportData();
             #endif
-            // === SALVA O TEST RIG ===
-            //rig.WriteRigVTK(counter);
 
             out_frame++;
         }
 
         cout << "\rRTF: " << sys.GetRTF() << endl;
-        //cout << "\rTime: " << time;
     }
     timer.stop();
 
@@ -502,9 +491,9 @@ int main(int argc, char* argv[]) {
 
 
 #ifdef CHRONO_POSTPROCESS
-    // ------------
-    // Plot results
-    // ------------
+    // ----------------------------------------------
+    // Gráficos rápidos dos resultados usando Gnuplot
+    // ----------------------------------------------
 
     if (gnuplot_output && sys.GetChTime() > input_time_delay) {
         postprocess::ChGnuPlot gplot_long_slip(out_dir + "/tmp1.gpl");
@@ -514,27 +503,12 @@ int main(int argc, char* argv[]) {
         gplot_long_slip.SetRangeY(-2, +2);
         gplot_long_slip.Plot(long_slip_fct, "", " with lines lt -1 lc rgb'#00AAEE' ");
 
-        //postprocess::ChGnuPlot gplot_slip_angle(out_dir + "/tmp2.gpl");
-        //gplot_slip_angle.SetGrid();
-        //gplot_slip_angle.SetLabelX("time (s)");
-        //gplot_slip_angle.SetLabelY("Slip angle (deg)");
-        //gplot_slip_angle.SetRangeY(-25, +25);
-        //gplot_slip_angle.Plot(slip_angle_fct, "", " with lines lt -1 lc rgb'#00AAEE' ");
-
-        //postprocess::ChGnuPlot gplot_camber_angle(out_dir + "/tmp3.gpl");
-        //gplot_camber_angle.SetGrid();
-        //gplot_camber_angle.SetLabelX("time (s)");
-        //gplot_camber_angle.SetLabelY("Camber angle (deg)");
-        //gplot_camber_angle.SetRangeY(-5, +5);
-        //gplot_camber_angle.Plot(camber_angle_fct, "", " with lines lt -1 lc rgb'#00AAEE' ");
-
         postprocess::ChGnuPlot gplot_dbp(out_dir + "/tmp4.gpl");
         gplot_dbp.SetGrid();
         gplot_dbp.SetLabelX("tempo (s)");
         gplot_dbp.SetLabelY("forca de tracao (N)");
         double margin_dbp = 0.1 * std::max(1.0, std::max(std::abs(min_dbp), std::abs(max_dbp)));
         gplot_dbp.SetRangeY(min_dbp - margin_dbp, max_dbp + margin_dbp);
-        //gplot_dbp.SetRangeY(-100, +1000);
         gplot_dbp.Plot(dbp_fct, "", " with lines lt -1 lc rgb'#c0081d' ");
 
         postprocess::ChGnuPlot gplot_torque(out_dir + "/tmp5.gpl");
@@ -543,7 +517,6 @@ int main(int argc, char* argv[]) {
         gplot_torque.SetLabelY("torque da roda (N.m)");
         double margin_torque = 0.1 * std::max(1.0, std::max(std::abs(min_torque), std::abs(max_torque)));
         gplot_torque.SetRangeY(min_torque - margin_torque, max_torque + margin_torque);
-        //gplot_torque.SetRangeY(-10, +10);
         gplot_torque.Plot(torque_fct, "", " with lines lt -1 lc rgb'#088a58' ");
 
         postprocess::ChGnuPlot gplot_sinkage(out_dir + "/tmp6.gpl");
@@ -552,7 +525,6 @@ int main(int argc, char* argv[]) {
         gplot_sinkage.SetLabelY("afundamento (m)");
         double margin_sinkage = 0.1 * std::max(1.0, std::max(std::abs(min_sinkage), std::abs(max_sinkage)));
         gplot_sinkage.SetRangeY(min_sinkage - margin_sinkage, max_sinkage + margin_sinkage);
-        //gplot_sinkage.SetRangeY(-0.1, +0.1);
         gplot_sinkage.Plot(sinkage_fct, "", " with lines lt -1 lc rgb'#8810af' ");
     }
 #endif
