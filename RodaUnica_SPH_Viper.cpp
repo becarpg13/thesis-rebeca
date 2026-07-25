@@ -123,9 +123,9 @@ int main(int argc, char* argv[]) {
     cout << "Comecando simulacao com razao de escorregamento: " << slip_percent << "%" << << endl;
     cout << "E velocidade linear da roda: " << wheel_vel << " m/s" << endl;
 
-    // -------------------------------------
+    // -----------------------------------------
     // Criação dos subsistemas da roda e do pneu
-    // -------------------------------------
+    // -----------------------------------------
 
     auto wheel = chrono_types::make_shared<DummyViperWheel>();
     auto tire = chrono_types::make_shared<ViperTire>();
@@ -312,9 +312,9 @@ int main(int argc, char* argv[]) {
         std::cout << ">> Arquivo 'sim_config.txt' gravado com sucesso em: " << out_dir << std::endl;
     }
 
-    // ---------------------------------
+    // -------------------------------------------------------------------
     // Criação da vizualização em tempo real e do exportador para Blender
-    // ---------------------------------
+    // -------------------------------------------------------------------
 
     std::shared_ptr<ChVisualSystem> vis;
     auto sysFSI = std::dynamic_pointer_cast<CRMTerrain>(rig.GetTerrain())->GetFsiSystemSPH();
