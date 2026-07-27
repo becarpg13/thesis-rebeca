@@ -481,7 +481,7 @@ int main(int argc, char* argv[]) {
     std::ofstream configFileAppend(out_dir + "/sim_config.txt", std::ios::app); 
     
     if (configFileAppend.is_open()) {
-        configFileAppend << "\n"; // Pula uma linha para organizar
+        configFileAppend << "\n";
         configFileAppend << "[COMPUTATIONAL PERFORMANCE RESULTS]\n";
         configFileAppend << "Simulated Time (s):      " << time << "\n";
         configFileAppend << "Execution Time (s):   " << step_time << "\n";
