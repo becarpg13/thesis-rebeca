@@ -1,16 +1,16 @@
-// =============================================================================
+// ===============================================================================
 //
-// TESTE DE RODA ÚNICA SPH 
-// Autora: Rebeca Pinho Guimarães
+// VIPER Single Wheel Test - Smoothed Particle Hydrodynamics (SPH) implementation
+// Author: Rebeca Pinho Guimarães
 //
-// =============================================================================
+// ===============================================================================
 // PROJECT CHRONO - http://projectchrono.org
 //
 // Copyright (c) 2025 projectchrono.org
 // All right reserved.
 //
-// Adaptado de demo_ROBOT_ViperWheel_CRM por Radu Serban e Huzaifa Unjhawala
-// =============================================================================
+// Adapted from demo_ROBOT_ViperWheel_CRM by Radu Serban and Huzaifa Unjhawala
+// ===============================================================================
 
 
 
@@ -58,30 +58,37 @@ bool render = true;
 bool output = true;
 bool verbose = true;
 
-bool output_paraview = true; // opção para salvar os dados de saída em arquivos VTK para visualização no Paraview
-bool blender_output = true; // opção para salvar os dados de saída em arquivos para visualização no Blender
-// Obs: A opção do Blender gera apenas os arquivos da estrutura e a opção do Paraview gera apenas os arquivos das partículas SPH e roda. 
-// Recomenda-se sempre manter a opção do Blender ativa por seu baixo custo computacional.
+bool output_paraview = true; // VTK data for Paraview visualization
+bool blender_output = true; // output data in files for Blender visualization
+// Note: The Blender option only generates data for the rigid bodies, whereas the Paraview option only generates the particles' and the wheel's data
+// You'll need both to generate a complete visualization of the simulation in Blender
 
 bool step_convergence = false;
 bool space_convergence = false;
 
-double wheel_slip = 0.1;  // razão de escorregamento desejada
-double wheel_vel = 0.2;   // velocidade linear desejada
-double step_size = 3.5e-4;  // passo de tempo de integração (s)
-double sim_time_max = 6; // tempo de simulação (s)
-double inner_radius = 0.21;  // raio interno para geração de BCE (m)
-double spacing_ratio = 0.75;  // razão entre o espaçamento das partículas BCE e o espaçamento das partículas do solo (CRM)
-double crm_initial_spacing = 0.01; // espaçamento inicial das partículas do solo (CRM) (m)
+double wheel_slip = 0.1;
+double wheel_vel = 0.2; 
+double step_size = 3.5e-4; 
+double sim_time_max = 6; 
+double inner_radius = 0.21; 
+double spacing_ratio = 0.75;  
+double crm_initial_spacing = 0.01;
 
 
 // -----------------------------------------------------------------------------
 
 
 int main(int argc, char* argv[]) {
-    // PARÂMETROS DE ENTRADA DO USUÁRIO
-    // Para usar o modo de convergência, o programa deve receber 5 argumentos: ./programa <slip> <vel> <valor_convergencia> <modo_convergencia>
-    // Modo de convergência: "time" para convergência de passo de tempo, "space" para convergência de espaçamento inicial do CRM.
+
+    // ===============================================================
+    // INPUT PARAMETERS FROM COMMAND LINE
+
+    // For convergence mode, the program should receive 5 arguments 
+    // ./program <slip> <vel> <convergence_value> <convergence_mode>
+
+    // Convergence mode: "time" or "space"
+    // ===============================================================
+
     if (argc == 5) {
         wheel_slip = std::stod(argv[1]);
         wheel_vel = std::stod(argv[2]);
@@ -94,72 +101,68 @@ int main(int argc, char* argv[]) {
         if (mode == "time") {
             step_size = convergence_value;
             step_convergence = true;
-            cout << ">> MODO: Convergencia de Passo de Tempo (dT = " << step_size << " s)" << endl;
+            cout << ">> MODE: time step convergence (dT = " << step_size << " s)" << endl;
         } 
         else if (mode == "space") {
             crm_initial_spacing = convergence_value;
             space_convergence = true;
-            cout << ">> MODO: Convergencia de Espacamento Inicial CRM (spacing = " << crm_initial_spacing << " m)" << endl;
+            cout << ">> MODE: initial spacing convergence (d0 = " << crm_initial_spacing << " m)" << endl;
         } 
         else {
-            cerr << "Erro: Modo de convergencia '" << mode << "' invalido. Use 'time' ou 'space'." << endl;
+            cerr << "Error: invalid convergence mode '" << mode << "'. Use 'time' or 'space'." << endl;
             return 1;
         }
     }
     else if (argc == 3) {
-        // Se foram digitados apenas dois argumentos, o programa assume que são o escorregamento e a velocidade linear da roda
-        // ./programa <slip> <vel>
+        // If only two arguments are provided, the program assumes they are the slip and longitudinal velocity of the wheel
+        // ./program <slip> <vel>
         wheel_slip = std::stod(argv[1]);
         wheel_vel = std::stod(argv[2]);
     } else if (argc == 2) {
-        // Se foi digitado apenas um argumento, o programa assume que é o escorregamento da roda
+        // If only one argument is provided, the program assumes it is the slip of the wheel
         wheel_slip = std::stod(argv[1]);
     } else if (argc == 1) {
-        // Se não foram digitados argumentos, o programa assume os parâmetros padrão definidos no início do código
-        cout << "USANDO PARAMETROS PADRAO" << endl;
+        // If no arguments are provided, the program assumes the default parameters defined at the beginning of the code
+        cout << "USING DEFAULT PARAMETERS" << endl;
     }
 
     int slip_percent = static_cast<int>(wheel_slip * 100);
-    cout << "Comecando simulacao com razao de escorregamento: " << slip_percent << "%" << << endl;
-    cout << "E velocidade linear da roda: " << wheel_vel << " m/s" << endl;
+    cout << "Starting simulation with slip ratio: " << slip_percent << "%" << endl;
+    cout << "And longitudinal velocity of the wheel: " << wheel_vel << " m/s" << endl;
 
-    // -----------------------------------------
-    // Criação dos subsistemas da roda e do pneu
-    // -----------------------------------------
+    // ---------------------------------
+    // Create wheel and tire subsystems
+    // ---------------------------------
 
     auto wheel = chrono_types::make_shared<DummyViperWheel>();
     auto tire = chrono_types::make_shared<ViperTire>();
 
 
-    // --------------------------
-    // Criação do sistema físico 
-    // --------------------------
+    // -------------------------------------------------
+    // Create system and set solver and integrator types
+    // -------------------------------------------------
 
     ChSystemSMC sys;
     sys.SetCollisionSystemType(ChCollisionSystem::Type::BULLET);
-
-    // --------------------------------------------
-    // Configuração do solucionador e do integrador
-    // --------------------------------------------
 
     ChSolver::Type solver_type = ChSolver::Type::SPARSE_QR;
     ChTimestepper::Type integrator_type = ChTimestepper::Type::EULER_IMPLICIT_LINEARIZED;
     SetChronoSolver(sys, solver_type, integrator_type);
 
-    // ------------------------------------------
-    // Criação e configuração da bancada de teste
-    // ------------------------------------------
+    // -----------------------------------
+    // Create and configure tire test rig
+    // -----------------------------------
 
     ChTireTestRig rig(wheel, tire, &sys);
 
-    rig.SetGravitationalAcceleration(1.625);  // Gravidade lunar
-    //rig.SetGravitationalAcceleration(9.81);  // Gravidade terrestre
-    rig.SetNormalLoad(17.5*9.81); // ATENÇÃO: recebe a CARGA NORMAL desejada (N)
+    rig.SetGravitationalAcceleration(1.625);  // Lunar gravity
+    //rig.SetGravitationalAcceleration(9.81);  // Earth gravity
+    rig.SetNormalLoad(17.5*9.81); // ATENTION: provide desired NORMAL LOAD (N)
 
     rig.SetTireStepsize(step_size);
     rig.SetTireVisualizationType(VisualizationType::COLLISION);
 
-    // Definição do terreno SPH
+    // Set SPH terrain
     ChTireTestRig::TerrainPatchSize size;
     size.length = 2.2;
     size.width = 1;
@@ -173,27 +176,26 @@ int main(int argc, char* argv[]) {
     params.mat_props.mu_I0 = 0.03;
     params.mat_props.mu_fric_2 = 0.77;
     params.mat_props.mu_fric_s = 0.77;
-    params.mat_props.average_diam = 0.004;  // diâmetro médio das partículas do solo (m)
+    params.mat_props.average_diam = 0.004;
 
     rig.SetTerrainCRM(size, params);
 
-    // Criação do callback para geração dos marcadores BCE
+    // Callback for generation of BCE marker particles
     auto bce_callback = chrono_types::make_shared<ViperTireBCE>(tire, params.sph_params.initial_spacing * spacing_ratio, inner_radius);
     rig.RegisterWheelBCECreationCallback(bce_callback);
 
-    // -----------------------------
-    // Definição do cenário de teste
-    // -----------------------------
+    // ----------------------
+    // Define test scenario
+    // ----------------------
 
     rig.SetConstantLongitudinalSlip(wheel_slip, wheel_vel);
 
-    // Tempo de delay para o início do funcionamento da roda (s).
+    // Delay time for beginning of input (s).
     double input_time_delay = 0.1;
     rig.SetTimeDelay(input_time_delay);
 
-    rig.SetWheelInitialClearance(0.02);  // Ajuste para alterar a distância inicial entre a roda e o solo (m).
+    rig.SetWheelInitialClearance(0.02);  // Adjust the initial distance between wheel and soil (m).
 
-    // Inicialização da bancada de teste
     rig.Initialize(ChTireTestRig::Mode::TEST);
 
     cout << "Rig normal load: " << rig.GetNormalLoad() << endl;
@@ -201,9 +203,9 @@ int main(int argc, char* argv[]) {
 
 
 
-    // --------------------------------
-    // Criação dos diretórios de saída
-    // --------------------------------
+    // -------------------------------
+    // Create the output directories
+    // -------------------------------
 
     const std::string out_dir_root = GetChronoOutputPath() + "ViperWheel_SPH_TCC2/";
     std::string out_dir = GetChronoOutputPath() + "ViperWheel_SPH_TCC2/Slip_" + std::to_string(slip_percent) + "/";
@@ -247,82 +249,83 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Criação do arquivo de resultados
+    // Create the output files
     std::ofstream myFile;
     if (output) {
         myFile.open(out_dir + "/results.txt", std::ios::trunc);
     }
 
-    // ========================================================
-    // GERAR ARQUIVO DE METADADOS E CONFIGURAÇÕES DA SIMULAÇÃO
-    // ========================================================
+    // ==================================================
+    // SAVE FILE METADATA AND SIMULATION CONFIGURATIONS
+    // ==================================================
+
     std::ofstream configFile(out_dir + "/sim_config.txt");
     if (configFile.is_open()) {
         configFile << "==================================================\n";
-        configFile << "       METADADOS DA SIMULAÇÃO - PROJECT CHRONO     \n";
+        configFile << "                 SIMULATION METADATA               \n";
         configFile << "==================================================\n\n";
         
-        configFile << "Razão de Escorregamento da Roda: " << wheel_slip << " (" << slip_percent << "%)\n";
-        configFile << "Velocidade Longitudinal da Roda (m/s): " << wheel_vel << "\n";
-        configFile << "Velocidade Angular da Roda (rad/s): " << rig.GetWheelAngularVelocity() << "\n\n";
+        configFile << "Wheel Slip Ratio: " << wheel_slip << " (" << slip_percent << "%)\n";
+        configFile << "Wheel Longitudinal Velocity (m/s): " << wheel_vel << "\n";
+        configFile << "Wheel Angular Velocity (rad/s): " << rig.GetWheelAngularVelocity() << "\n\n";
 
-        configFile << "[PROPRIEDADES DA RODA]\n";
-        configFile << "Tipo de Roda:              " << (tire->GetGrouserHeightConfig() > 0.0 ? "Com Garras (Grousers)" : "Cilindrica Lisa") << "\n";
-        configFile << "Raio da Roda (m):          " << tire->GetRadiusConfig() << "\n";
-        configFile << "Largura da Roda (m):       " << tire->GetWidthConfig() << "\n";
-        configFile << "Altura da Garra (m):       " << tire->GetGrouserHeightConfig() << "\n";
-        configFile << "Massa do Pneu (kg):        " << tire->GetTireMassConfig() << "\n";
-        configFile << "Massa da Roda Dummy (kg):  " << wheel->GetWheelMass() << "\n\n";
+        configFile << "[WHEEL PROPERTIES]\n";
+        configFile << "Wheel Type:                " << (tire->GetGrouserHeightConfig() > 0.0 ? "Grousered" : "Smooth Cylindrical") << "\n";
+        configFile << "Wheel Radius (m):          " << tire->GetRadiusConfig() << "\n";
+        configFile << "Wheel Width (m):           " << tire->GetWidthConfig() << "\n";
+        configFile << "Grouser Height (m):        " << tire->GetGrouserHeightConfig() << "\n";
+        configFile << "Tire Mass (kg):            " << tire->GetTireMassConfig() << "\n";
+        configFile << "Dummy Wheel Mass (kg):     " << wheel->GetWheelMass() << "\n\n";
         
-        configFile << "[CONFIGURAÇÕES DO TEST RIG]\n";
-        configFile << "Carga Normal Alvo (N):     " << rig.GetNormalLoad() << "\n";
-        configFile << "Massa Total do Rig (kg):     " << rig.GetMass() << "\n";
-        configFile << "Gravidade (m/s^2):          " << rig.GetGravitationalAcceleration() << "\n";
-        configFile << "Tempo Inicial de Delay (s): " << input_time_delay << "\n";
-        configFile << "Tempo Max de Simulação (s): " << sim_time_max << "\n\n";
+        configFile << "[TEST RIG SETTINGS]\n";
+        configFile << "Target Normal Load (N):    " << rig.GetNormalLoad() << "\n";
+        configFile << "Total Rig Mass (kg):       " << rig.GetMass() << "\n";
+        configFile << "Gravitational Acceleration (m/s^2): " << rig.GetGravitationalAcceleration() << "\n";
+        configFile << "Initial Delay Time (s):    " << input_time_delay << "\n";
+        configFile << "Max Simulation Time (s):   " << sim_time_max << "\n\n";
         
-        configFile << "[PARÂMETROS DO SOLO CRM / SPH]\n";
-        configFile << "Espaçamento de Partícula (m): " << params.sph_params.initial_spacing << "\n";
-        configFile << "Diâmetro Médio do Solo (m):  " << params.mat_props.average_diam << "\n";
-        configFile << "Densidade do Solo (kg/m3):    " << params.mat_props.density << "\n";
-        configFile << "Módulo de Young (Pa):         " << params.mat_props.Young_modulus << "\n";
-        configFile << "Coeficiente de Fricção mu_s (adimensional): " << params.mat_props.mu_fric_s << "\n";
-        configFile << "Coeficiente de Fricção mu_2 (adimensional): " << params.mat_props.mu_fric_2 << "\n";
-        configFile << "Coesão do Solo (cohesion):    " << params.mat_props.cohesion_coeff << "\n\n";
+        configFile << "[CRM / SPH SOIL PARAMETERS]\n";
+        configFile << "Particle Spacing (m):      " << params.sph_params.initial_spacing << "\n";
+        configFile << "Average Soil Diameter (m): " << params.mat_props.average_diam << "\n";
+        configFile << "Soil Density (kg/m3):      " << params.mat_props.density << "\n";
+        configFile << "Young's Modulus (Pa):      " << params.mat_props.Young_modulus << "\n";
+        configFile << "Friction Coefficient mu_s (dimensionless): " << params.mat_props.mu_fric_s << "\n";
+        configFile << "Friction Coefficient mu_2 (dimensionless): " << params.mat_props.mu_fric_2 << "\n";
+        configFile << "Soil Cohesion:             " << params.mat_props.cohesion_coeff << "\n\n";
 
-        configFile << "[MEDIDAS DO TERRENO]\n";
-        configFile << "Comprimento do Patch (m):     " << size.length << "\n";
-        configFile << "Largura do Patch (m):        " << size.width << "\n";
-        configFile << "Profundidade do Patch (m):    " << size.depth << "\n\n";
+        configFile << "[TERRAIN DIMENSIONS]\n";
+        configFile << "Patch Length (m):          " << size.length << "\n";
+        configFile << "Patch Width (m):           " << size.width << "\n";
+        configFile << "Patch Depth (m):           " << size.depth << "\n\n";
 
-        configFile << "[CONFIGURAÇÕES DE SIMULAÇÃO]\n";
-        configFile << "Raio Interno para BCE (m):     " << inner_radius << "\n";
-        configFile << "Razão de Espaçamento BCE/CRM: " << spacing_ratio << "\n";
-        configFile << "Tipo de BCE:                     " << (tire->GetUseObjBCE() ? "Gerado pelos vértices do OBJ" : "Gerado manualmente por código") << "\n";
-        configFile << "Domínio Ativo da Roda (m):             " << rig.GetWheelActiveDomain() << "\n";
-        configFile << "Domínio Computacional Mínimo (m):             " << rig.GetTerrainDomain_Min() << "\n";
-        configFile << "Domínio Computacional Máximo (m):             " << rig.GetTerrainDomain_Max() << "\n\n";
+        configFile << "[SIMULATION SETTINGS]\n";
+        configFile << "Inner Radius for BCE (m):              " << inner_radius << "\n";
+        configFile << "BCE/CRM Spacing Ratio:                 " << spacing_ratio << "\n";
+        configFile << "BCE Type:                              " << (tire->GetUseObjBCE() ? "Generated from OBJ vertices" : "Manually generated by code") << "\n";
+        configFile << "Wheel Active Domain (m):               " << rig.GetWheelActiveDomain() << "\n";
+        configFile << "Minimum Computational Domain (m):      " << rig.GetTerrainDomain_Min() << "\n";
+        configFile << "Maximum Computational Domain (m):      " << rig.GetTerrainDomain_Max() << "\n\n";
 
-        configFile << "[RESOLVEDOR E INTEGRAÇÃO]\n";
-        configFile << "Passo de Tempo - dT (s):   " << step_size << "\n";
-        configFile << "Tipo de Solucionador:      " << (solver_type == ChSolver::Type::SPARSE_QR ? "SPARSE_QR" : solver_type == ChSolver::Type::BARZILAIBORWEIN ? "BARZILAIBORWEIN" : "OUTRO") << "\n";
+        configFile << "[SOLVER AND INTEGRATION]\n";
+        configFile << "Time Step - dT (s):        " << step_size << "\n";
+        configFile << "Solver Type:               " << (solver_type == ChSolver::Type::SPARSE_QR ? "SPARSE_QR" : solver_type == ChSolver::Type::BARZILAIBORWEIN ? "BARZILAIBORWEIN" : "OTHER") << "\n";
         configFile << "==================================================\n";
         
         configFile.close();
-        std::cout << ">> Arquivo 'sim_config.txt' gravado com sucesso em: " << out_dir << std::endl;
+        std::cout << ">> File 'sim_config.txt' successfully written to: " << out_dir << std::endl;
     }
 
-    // -------------------------------------------------------------------
-    // Criação da visualização em tempo real e do exportador para Blender
-    // -------------------------------------------------------------------
+    // -------------------------------
+    // Create real time visualization
+    // -------------------------------
 
     std::shared_ptr<ChVisualSystem> vis;
     auto sysFSI = std::dynamic_pointer_cast<CRMTerrain>(rig.GetTerrain())->GetFsiSystemSPH();
     auto visFSI = chrono_types::make_shared<ChSphVisualizationVSG>(sysFSI.get());
 
     if (render) {
-        auto color_callback = chrono_types::make_shared<ParticleHeightColorCallback>(rig.GetTerrainDomain_Min().z()-tire->GetRadiusConfig(), rig.GetTerrainDomain_Max().z()-tire->GetRadiusConfig());  // color particles based on height (range 0 to 1 m)
-        // FSI plugin
+        auto color_callback = chrono_types::make_shared<ParticleHeightColorCallback>(rig.GetTerrainDomain_Min().z()-tire->GetRadiusConfig(), rig.GetTerrainDomain_Max().z()-tire->GetRadiusConfig());
+
         visFSI->EnableFluidMarkers(true);
         visFSI->EnableBoundaryMarkers(true);
         visFSI->EnableRigidBodyMarkers(true);
@@ -330,14 +333,13 @@ int main(int argc, char* argv[]) {
         visFSI->SetColorBoundaryMarkers({0.85, 0.85, 0.85});
         visFSI->SetColorRigidBodyMarkers({0.3, 0.6, 0.0});
 
-        // VSG visual system (attach visFSI as plugin)
         auto visVSG = chrono_types::make_shared<vsg3d::ChVisualSystemVSG>();
         visVSG->AttachPlugin(visFSI);
         visVSG->AttachSystem(&sys);
         visVSG->SetWindowTitle("Viper wheel on CRM deformable terrain");
         visVSG->SetWindowSize(1280, 800);
         visVSG->SetWindowPosition(100, 100);
-        // Static camera: place the view high enough and behind the wheel to see the tire-terrain gap.
+
         visVSG->AddCamera(ChVector3d(1.0, 2.5, -0.6), ChVector3d(0, 0.25, -0.6));
         visVSG->SetLightIntensity(0.9f);
         visVSG->SetLightDirection(CH_PI_2, CH_PI / 6);
@@ -347,9 +349,9 @@ int main(int argc, char* argv[]) {
     }
 
     #ifdef CHRONO_POSTPROCESS
-    // --------------------------------------
-    // Criar exportador de dados para Blender
-    // --------------------------------------
+    // -----------------------------
+    // Create Blender data exporter
+    // -----------------------------
 
     postprocess::ChBlender blender_exporter(&sys);
 
@@ -372,17 +374,18 @@ int main(int argc, char* argv[]) {
     ChFsiFluidSystemSPH& sysSPH = sysFSI->GetFluidSystemSPH();
 
     // -----------------
-    // LOOP DE SIMULAÇÃO
+    // SIMULATION LOOP
     // -----------------
 
-    // Timers e contadores
-    ChTimer timer;         // timer para medir o tempo total de execução
-    double time = 0;       // tempo simulado
-    double sim_time = 0;   // tempo de simulação
-    int render_frame = 0;  // contador de frames para renderização
-    int out_frame = 0;     // contador de frames para saída de dados
+    // Timers and counters
+    ChTimer timer;         // timer for measuring total run time
+    double time = 0;       // simulated time
+    double sim_time = 0;   // simulation time
+    int render_frame = 0;  // render frame counter
+    int out_frame = 0;     // output frame counter
 
-    // Funções de interpolação para coleta de dados
+
+    // Interpolation functions for data collection
     ChFunctionInterp long_slip_fct;
     ChFunctionInterp dbp_fct;
     ChFunctionInterp torque_fct;
@@ -479,20 +482,20 @@ int main(int argc, char* argv[]) {
     
     if (configFileAppend.is_open()) {
         configFileAppend << "\n"; // Pula uma linha para organizar
-        configFileAppend << "[RESULTADOS DE DESEMPENHO COMPUTACIONAL]\n";
-        configFileAppend << "Tempo Simulado (s):      " << time << "\n";
-        configFileAppend << "Tempo de Execucao (s):   " << step_time << "\n";
+        configFileAppend << "[COMPUTATIONAL PERFORMANCE RESULTS]\n";
+        configFileAppend << "Simulated Time (s):      " << time << "\n";
+        configFileAppend << "Execution Time (s):   " << step_time << "\n";
         configFileAppend << "Real-Time Factor (RTF):  " << (step_time / time) << "\n";
         configFileAppend << "==================================================\n";
         
         configFileAppend.close();
-        std::cout << ">> Dados de desempenho apensados em 'sim_config.txt' com sucesso!" << std::endl;
+        std::cout << ">> Performance data added to 'sim_config.txt' successfully!" << std::endl;
     }
 
 
 #ifdef CHRONO_POSTPROCESS
     // ----------------------------------------------
-    // Gráficos rápidos dos resultados usando Gnuplot
+    // Quick plots of results using Gnuplot
     // ----------------------------------------------
 
     if (gnuplot_output && sys.GetChTime() > input_time_delay) {
@@ -505,24 +508,24 @@ int main(int argc, char* argv[]) {
 
         postprocess::ChGnuPlot gplot_dbp(out_dir + "/tmp4.gpl");
         gplot_dbp.SetGrid();
-        gplot_dbp.SetLabelX("tempo (s)");
-        gplot_dbp.SetLabelY("forca de tracao (N)");
+        gplot_dbp.SetLabelX("time (s)");
+        gplot_dbp.SetLabelY("traction force (N)");
         double margin_dbp = 0.1 * std::max(1.0, std::max(std::abs(min_dbp), std::abs(max_dbp)));
         gplot_dbp.SetRangeY(min_dbp - margin_dbp, max_dbp + margin_dbp);
         gplot_dbp.Plot(dbp_fct, "", " with lines lt -1 lc rgb'#c0081d' ");
 
         postprocess::ChGnuPlot gplot_torque(out_dir + "/tmp5.gpl");
         gplot_torque.SetGrid();
-        gplot_torque.SetLabelX("tempo (s)");
-        gplot_torque.SetLabelY("torque da roda (N.m)");
+        gplot_torque.SetLabelX("time (s)");
+        gplot_torque.SetLabelY("wheel torque (N.m)");
         double margin_torque = 0.1 * std::max(1.0, std::max(std::abs(min_torque), std::abs(max_torque)));
         gplot_torque.SetRangeY(min_torque - margin_torque, max_torque + margin_torque);
         gplot_torque.Plot(torque_fct, "", " with lines lt -1 lc rgb'#088a58' ");
 
         postprocess::ChGnuPlot gplot_sinkage(out_dir + "/tmp6.gpl");
         gplot_sinkage.SetGrid();
-        gplot_sinkage.SetLabelX("tempo (s)");
-        gplot_sinkage.SetLabelY("afundamento (m)");
+        gplot_sinkage.SetLabelX("time (s)");
+        gplot_sinkage.SetLabelY("sinkage (m)");
         double margin_sinkage = 0.1 * std::max(1.0, std::max(std::abs(min_sinkage), std::abs(max_sinkage)));
         gplot_sinkage.SetRangeY(min_sinkage - margin_sinkage, max_sinkage + margin_sinkage);
         gplot_sinkage.Plot(sinkage_fct, "", " with lines lt -1 lc rgb'#8810af' ");
